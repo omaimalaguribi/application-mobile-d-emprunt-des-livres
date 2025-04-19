@@ -17,18 +17,17 @@ const SplashScreen = ({ navigation }) => {
       {/* Section logo */}
       <View style={styles.logoSection}>
         <Image
-          source={require('../assets/logo1.png')}
+          source={require('./photos/logo1.png')}
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.logoText}>Ouma Books</Text>
-        <Text style={styles.tagline}>book</Text>
+       
       </View>
       
       {/* Section illustration */}
       <View style={styles.illustrationContainer}>
         <Image
-          source={require('../assets/background.png')}
+          source={require('./photos/background.png')}
           style={styles.backgroundImage}
           resizeMode="contain"
         />
@@ -51,8 +50,8 @@ const styles = StyleSheet.create({
     paddingTop: 40,
   },
   logo: {
-    width: 100,
-    height: 100,
+    width: 250,
+    height: 250,
   },
   logoText: {
     color: 'white',

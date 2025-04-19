@@ -199,7 +199,7 @@ const handleResetPassword = async () => {
               disabled={isLoading}
             >
               <Text style={styles.actionButtonText}>
-                Envoyer le lien de réinitialisation
+                Envoyer le code de réinitialisation
               </Text>
             </TouchableOpacity>
           </>
@@ -292,7 +292,7 @@ const handleResetPassword = async () => {
       
       <View style={styles.logoContainer}>
         <Image
-          source={require('../assets/logo1.png')}
+          source={require('./photos/logo1.png')}
           style={styles.logo}
           resizeMode="contain"
         />

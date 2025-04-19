@@ -166,7 +166,7 @@ const UserProfileScreen = ({ navigation }) => {
   source={
     user?.profile_picture 
       ? { uri: `data:image/jpeg;base64,${user.profile_picture}` } 
-      : require('../assets/logo.png')
+      : require('./photos/logo1.png')
   }
   style={styles.profileImage}
   onError={(e) => {

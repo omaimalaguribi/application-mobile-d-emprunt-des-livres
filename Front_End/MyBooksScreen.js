@@ -67,7 +67,7 @@ const MyBooksScreen = ({ navigation }) => {
   const renderLoanItem = ({ item }) => (
     <View style={styles.loanCard}>
       <Image
-        source={item.Picture_link ? { uri: item.Picture_link } : require('../assets/logo.png')}
+        source={item.Picture_link ? { uri: item.Picture_link } : require('./photos/logo1.png')}
         style={styles.bookImage}
         resizeMode="contain"
       />
@@ -114,10 +114,8 @@ const MyBooksScreen = ({ navigation }) => {
     <View style={styles.container}>
       <StatusBar backgroundColor="#6b4119" barStyle="light-content" />
       
-      {/* Header principal */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mes Emprunts</Text>
-      </View>
+    
+     
       
       {/* Sous-header */}
       <View style={styles.subHeader}>

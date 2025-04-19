@@ -170,16 +170,7 @@ const AddBookScreen = ({ navigation }) => {
   
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-left" size={20} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ajouter un livre</Text>
-        <View style={styles.placeholder}></View>
-      </View>
+      
       
       <ScrollView style={styles.formContainer}>
         <View style={styles.imageSection}>

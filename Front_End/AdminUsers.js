@@ -10,7 +10,8 @@ import {
   Alert,
   Modal,
   ScrollView,
-  ActivityIndicator
+  ActivityIndicator,
+  Image
 } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -135,6 +136,84 @@ const AdminUsers = ({ navigation }) => {
     );
   };
 
+  // Composant pour afficher l'avatar (photo ou icône par défaut)
+  const UserAvatar = ({ userId, size, style }) => {
+    const [profilePicture, setProfilePicture] = useState(null);
+    const [hasError, setHasError] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    
+    // Tailles d'avatar différentes selon l'utilisation
+    const avatarSize = size === 'large' ? 80 : 50;
+    const iconSize = size === 'large' ? 40 : 30;
+    
+    useEffect(() => {
+      const fetchProfilePicture = async () => {
+        try {
+          setIsLoading(true);
+          const token = await AsyncStorage.getItem('userToken');
+          const response = await axios.get(`${API_URL}/user/profile-picture/${userId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (response.data && response.data.profile_picture) {
+            setProfilePicture(response.data.profile_picture);
+          } else {
+            setHasError(true);
+          }
+        } catch (error) {
+          console.error('Erreur chargement photo profil:', error);
+          setHasError(true);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      fetchProfilePicture();
+    }, [userId]);
+    
+    const avatarStyle = {
+      width: avatarSize,
+      height: avatarSize,
+      borderRadius: avatarSize / 2,
+      backgroundColor: '#87512a',
+      justifyContent: 'center',
+      alignItems: 'center',
+      ...style
+    };
+
+    // Si chargement, afficher indicateur
+    if (isLoading) {
+      return (
+        <View style={avatarStyle}>
+          <ActivityIndicator size="small" color="#fff" />
+        </View>
+      );
+    }
+
+    // Si erreur ou pas d'image, afficher l'icône par défaut
+    if (hasError || !profilePicture) {
+      return (
+        <View style={avatarStyle}>
+          <Icon name="user" size={iconSize} color="#fff" />
+        </View>
+      );
+    }
+
+    return (
+      <View style={avatarStyle}>
+        <Image
+          source={{ uri: `data:image/jpeg;base64,${profilePicture}` }}
+          style={{
+            width: avatarSize,
+            height: avatarSize,
+            borderRadius: avatarSize / 2,
+          }}
+          onError={() => setHasError(true)}
+        />
+      </View>
+    );
+  };
+
   // Filtrer les utilisateurs selon la recherche
   const filteredUsers = users.filter(user => {
     if (!user.prenom || !user.nom || !user.email) return false;
@@ -148,7 +227,6 @@ const AdminUsers = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.tabTitle}>Gestion des utilisateurs</Text>
       
       {/* Barre de recherche */}
       <View style={styles.searchContainer}>
@@ -171,9 +249,7 @@ const AdminUsers = ({ navigation }) => {
             onPress={() => handleUserAction(item)}
           >
             <View style={styles.userHeader}>
-              <View style={styles.avatar}>
-                <Icon name="user" size={30} color="#fff" />
-              </View>
+              <UserAvatar userId={item.id} size="normal" style={styles.avatar} />
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>{item.prenom} {item.nom}</Text>
                 <Text style={styles.userEmail}>{item.email}</Text>
@@ -210,9 +286,7 @@ const AdminUsers = ({ navigation }) => {
             {selectedUser && (
               <ScrollView contentContainerStyle={styles.modalContent}>
                 <View style={styles.modalHeader}>
-                  <View style={styles.modalAvatar}>
-                    <Icon name="user" size={40} color="#fff" />
-                  </View>
+                  <UserAvatar userId={selectedUser.id} size="large" style={styles.modalAvatar} />
                   <Text style={styles.modalUserName}>{selectedUser.prenom} {selectedUser.nom}</Text>
                   <Text style={styles.modalUserRole}>{selectedUser.role}</Text>
                 </View>
@@ -284,7 +358,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-    padding: 2,
+    padding: 15,
   },
   tabTitle: {
     fontSize: 24,
@@ -332,12 +406,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#87512a',
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: 15,
   },
   userInfo: {
@@ -399,12 +467,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#87512a',
-    justifyContent: 'center',
-    alignItems: 'center',
     marginBottom: 15,
   },
   modalUserName: {

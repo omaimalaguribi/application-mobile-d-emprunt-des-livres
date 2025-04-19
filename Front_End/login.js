@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TextInput, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, Image, TextInput, TouchableOpacity, ActivityIndicator, Modal, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
 const API_URL = 'http://10.0.2.2:5000/api'; // Pour l'émulateur Android, utilisez l'IP réelle pour les appareils physiques
+
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -18,6 +19,8 @@ const LoginScreen = ({ navigation }) => {
   const [alertMessage, setAlertMessage] = useState('');
   const [alertType, setAlertType] = useState('success'); // 'success' ou 'error'
   const [emailError, setEmailError] = useState('');
+
+
 
   // Fonction pour valider le format de l'email
   const validateEmail = (email) => {
@@ -33,26 +36,22 @@ const LoginScreen = ({ navigation }) => {
     setAlertVisible(true);
   };
 
+
+
+
   const handleLogin = async () => {
-    // Réinitialiser les erreurs d'email
     setEmailError('');
     
     if (!email || !password) {
       return showCustomAlert('Champs manquants', 'Veuillez remplir tous les champs', 'error');
     }
     
-    // Validation du format de l'email
     if (!validateEmail(email)) {
       setEmailError('Format d\'email invalide');
       return;
     }
     
     setIsLoading(true);
-    // Dans votre fonction de connexion réussie
-navigation.reset({
-  index: 0,
-  routes: [{ name: 'UserArea' }]
-});
     
     try {
       const response = await axios.post(`${API_URL}/users/login`, {
@@ -62,34 +61,41 @@ navigation.reset({
       
       const { token, user } = response.data;
       
-      // Sauvegarder le token et les informations utilisateur dans AsyncStorage
       await AsyncStorage.setItem('userToken', token);
       await AsyncStorage.setItem('userData', JSON.stringify(user));
       
       setIsLoading(false);
       
-      // Rediriger en fonction du rôle
+      // REDIRECTION CORRIGÉE ICI:
       if (user.role === 'administrateur') {
-        navigation.navigate('Admin');
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Admin' }]
+        });
       } else {
-        navigation.navigate('UserDashboard'); // Modifié de 'User' à 'Home'
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'UserDashboard' }]
+        });
       }
+      
     } catch (error) {
       setIsLoading(false);
       
       let message = 'Une erreur est survenue. Veuillez réessayer.';
       if (error.response) {
-        message = error.response.data.message || message;
+        if (error.response.status === 401) {
+          message = 'Email ou mot de passe incorrect';
+        } else if (error.response.data?.message) {
+          message = error.response.data.message;
+        }
       }
       
-      showCustomAlert('Erreur de connexion', message, 'error');
+      showCustomAlert('Erreur', message, 'error');
     }
   };
-
-  const handleGoogleLogin = () => {
-    // Fonctionnalité à implémenter ultérieurement
-    showCustomAlert('Information', 'La connexion Google sera disponible prochainement.', 'info');
-  };
+  
+ 
 
   const handleForgotPassword = () => {
     navigation.navigate('ForgotPassword');
@@ -145,7 +151,7 @@ navigation.reset({
       
       <View style={styles.logoContainer}>
         <Image
-          source={require('../assets/logo1.png')}
+          source={require('./photos/logo1.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -217,7 +223,11 @@ navigation.reset({
           <View style={styles.line} />
         </View>
 
-        <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin}>
+        <TouchableOpacity 
+          style={styles.googleButton} 
+          
+          disabled={isLoading}
+        >
           <Icon name="google" size={24} color="#ffffff" style={styles.googleIcon} />
           <Text style={styles.googleButtonText}>Connexion avec Google</Text>
         </TouchableOpacity>
@@ -330,7 +340,7 @@ const styles = StyleSheet.create({
   },
   googleButton: {
     flexDirection: 'row',
-    backgroundColor: '#A9A9A9',
+    backgroundColor: '#a19e9e', 
     borderRadius: 10,
     padding: 15,
     alignItems: 'center',
@@ -398,11 +408,6 @@ const styles = StyleSheet.create({
   errorHeader: {
     backgroundColor: '#f55d55',
   },
-  alertTitle: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
   alertBody: {
     padding: 20,
     alignItems: 'center',
@@ -431,6 +436,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#87512a',
+  },
+  alertTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
 });
 

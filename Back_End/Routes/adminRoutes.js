@@ -267,14 +267,30 @@ router.get('/books/:isbn', async (req, res) => {
 router.post('/books', verifyToken, isAdmin, async (req, res) => {
   try {
     const { ISBN, Title, Author, Language, Date, Description, Quantity } = req.body;
-    
+
     await db.query(
       `INSERT INTO books 
       (ISBN, Title, Author, Language, Date, Description, Quantity) 
       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [ISBN, Title, Author, Language, Date, Description, Quantity]
     );
+
+    // Ajout de la notification après l'insertion du livre
+    const message = `Nouveau livre disponible: "${Title}" par ${Author}. Empruntez-le vite avant qu'il ne soit indisponible!`;
     
+    // Récupérer tous les utilisateurs (sauf les admins)
+    const [users] = await db.query('SELECT id FROM users WHERE role = "utilisateur"');
+
+    // Insérer une notification pour chaque utilisateur
+    const insertPromises = users.map(user => {
+      return db.query(
+        'INSERT INTO notifications (user_id, message, is_read, created_at, book_isbn) VALUES (?, ?, 0, NOW(), ?)',
+        [user.id, message, ISBN]  // Ajouter l'ISBN du livre
+      );
+    });
+
+    await Promise.all(insertPromises); // Attendre que toutes les insertions soient terminées
+
     res.status(201).json({
       message: 'Livre ajouté avec succès',
       ISBN: ISBN
@@ -285,28 +301,6 @@ router.post('/books', verifyToken, isAdmin, async (req, res) => {
       message: 'Erreur serveur',
       error: error.message 
     });
-  }
-});
-// Gardez seulement cette version (plus robuste)
-router.post('/books/:isbn/image', upload.single('bookImage'), async (req, res) => {
-  const { isbn } = req.params;
-  
-  if (!req.file) {
-    return res.status(400).json({ message: 'Aucune image téléchargée' });
-  }
-  
-  try {
-    const imageBuffer = fs.readFileSync(req.file.path);
-    await db.query(
-      'UPDATE books SET Picture_link = ? WHERE ISBN = ?',
-      [imageBuffer, isbn]
-    );
-    
-    fs.unlinkSync(req.file.path); // Supprimer le fichier temporaire
-    res.status(200).json({ message: 'Image mise à jour' });
-  } catch (error) {
-    if (req.file) fs.unlinkSync(req.file.path);
-    res.status(500).json({ message: 'Erreur serveur' });
   }
 });
 
@@ -464,8 +458,167 @@ router.delete('/books/:isbn', verifyToken, isAdmin, async (req, res) => {
     });
   }
 });
+// Dans votre fichier de routes admin
+router.get('/user/profile-picture/:userId', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).send('Authentification requise');
+    }
+    
+    // Vérification que l'utilisateur est bien admin (à adapter selon votre logique d'authentification)
+    // ...
+    
+    const [users] = await db.query(
+      'SELECT profile_picture FROM users WHERE id = ?',
+      [req.params.userId]
+    );
+
+    if (!users[0] || !users[0].profile_picture) {
+      return res.status(404).json({ error: 'Image non trouvée' });
+    }
+
+    // Renvoyer l'image en base64
+    res.json({ profile_picture: users[0].profile_picture.toString('base64') });
+  } catch (error) {
+    console.error('Erreur récupération image:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour obtenir les statistiques du tableau de bord admin
+router.get('/dashboard-stats', verifyToken, isAdmin, async (req, res) => {
+  try {
+    // Requête pour obtenir le nombre total d'utilisateurs
+    const [usersResult] = await db.query('SELECT COUNT(*) as count FROM users');
+    
+    // Requête pour obtenir le nombre total de livres
+    const [booksResult] = await db.query('SELECT COUNT(*) as count FROM books');
+    
+    // Requête pour obtenir le nombre de livres retournés
+    const [returnedBooksResult] = await db.query(
+      `SELECT COUNT(*) as count FROM borrowings WHERE status = 'retourné'`
+    );
+    
+    // Requête pour obtenir le nombre d'emprunts actifs
+    const [activeBorrowingsResult] = await db.query(
+      `SELECT COUNT(*) as count FROM borrowings WHERE status = 'emprunté'`
+    );
+    
+    const stats = {
+      usersCount: usersResult[0].count,
+      booksCount: booksResult[0].count,
+      returnedBooksCount: returnedBooksResult[0].count,
+      activeBorrowingsCount: activeBorrowingsResult[0].count
+    };
+    
+    res.status(200).json(stats);
+  } catch (error) {
+    console.error('Erreur lors de la récupération des statistiques:', error);
+    res.status(500).json({
+      message: 'Erreur serveur lors de la récupération des statistiques',
+      error: error.message
+    });
+  }
+});
 
 
+// Route pour obtenir tous les emprunts
+router.get('/borrowings', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const [borrowings] = await db.query(`
+      SELECT 
+        b.id,
+        b.book_isbn,
+        b.user_id,
+        b.borrow_date,
+        b.return_date,
+        b.status,
+        bk.Title AS book_title,
+        bk.Author AS book_author,
+        u.nom AS user_nom,
+        u.prenom AS user_prenom
+      FROM borrowings b
+      JOIN books bk ON b.book_isbn = bk.ISBN
+      JOIN users u ON b.user_id = u.id
+      ORDER BY b.borrow_date DESC
+    `);
+    
+    res.status(200).json(borrowings);
+  } catch (error) {
+    console.error('Erreur:', error);
+    res.status(500).json({ 
+      message: 'Erreur serveur',
+      error: error.message 
+    });
+  }
+});
 
+// Route pour marquer un emprunt comme retourné
+router.post('/borrowings/:id/return', async (req, res) => {
+  let connection;
+  
+  try {
+    const borrowingId = req.params.id;
+    
+    connection = await db.getConnection();
+    
+    // 1. Vérifier l'emprunt
+    const [borrowings] = await connection.query(
+      `SELECT * FROM borrowings 
+       WHERE id = ? AND status = 'emprunté'`,
+      [borrowingId]
+    );
+    
+    if (borrowings.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Emprunt non trouvé ou déjà retourné' 
+      });
+    }
 
+    const borrowing = borrowings[0];
+
+    // 2. Démarrer une transaction
+    await connection.beginTransaction();
+
+    try {
+      // a. Augmenter la quantité du livre
+      await connection.query(
+        'UPDATE books SET Quantity = Quantity + 1 WHERE ISBN = ?',
+        [borrowing.book_isbn]
+      );
+
+      // b. Marquer l'emprunt comme retourné
+      await connection.query(
+        `UPDATE borrowings 
+         SET status = 'retourné', return_date = NOW() 
+         WHERE id = ?`,
+        [borrowingId]
+      );
+
+      // c. Valider la transaction
+      await connection.commit();
+
+      res.status(200).json({ 
+        success: true,
+        message: 'Livre marqué comme retourné avec succès' 
+      });
+
+    } catch (transactionError) {
+      await connection.rollback();
+      throw transactionError;
+    }
+
+  } catch (error) {
+    console.error('Erreur retour:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Erreur lors du retour du livre',
+      error: error.message 
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
 module.exports = router;

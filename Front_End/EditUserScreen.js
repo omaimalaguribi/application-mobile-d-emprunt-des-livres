@@ -81,7 +81,7 @@ const EditUserScreen = ({ route, navigation }) => {
       style={styles.container}
       contentContainerStyle={styles.scrollContainer}
     >
-      <Text style={styles.title}>Modifier l'utilisateur</Text>
+     
       
       <View style={styles.card}>
         <View style={styles.formGroup}>

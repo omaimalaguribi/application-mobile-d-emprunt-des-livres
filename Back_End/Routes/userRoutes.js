@@ -9,6 +9,14 @@ const { verifyToken } = require('../Middleware/auth');
 const multer = require('multer');
 const fs = require('fs');
 
+
+const cors = require('cors');
+router.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 // Ajouter ceci au début de votre fichier Server.js
 require('dotenv').config();
 console.log("Email config:", { 
@@ -282,6 +290,7 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur lors de la connexion' });
   }
 });
+
 
 // Route pour récupérer le profil utilisateur (protégée par JWT)
 router.get('/profile', verifyToken, async (req, res) => {
@@ -906,69 +915,6 @@ router.post('/borrow/:isbn', verifyToken, async (req, res) => {
     if (connection) connection.release();
   }
 });
-// Route pour retourner un livre - Version améliorée
-router.post('/return/:borrowingId', verifyToken, async (req, res) => {
-  try {
-    const borrowingId = req.params.borrowingId;
-    const userId = req.userData.id;
-
-    // 1. Vérifier l'emprunt
-    const [borrowings] = await db.query(
-      `SELECT * FROM borrowings 
-       WHERE id = ? AND user_id = ? AND status = 'emprunté'`,
-      [borrowingId, userId]
-    );
-    
-    if (borrowings.length === 0) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Emprunt non trouvé ou déjà retourné' 
-      });
-    }
-
-    const borrowing = borrowings[0];
-
-    // 2. Démarrer une transaction
-    await db.beginTransaction();
-
-    try {
-      // a. Augmenter la quantité du livre
-      await db.query(
-        'UPDATE books SET Quantity = Quantity + 1 WHERE ISBN = ?',
-        [borrowing.book_isbn]
-      );
-
-      // b. Marquer comme retourné
-      await db.query(
-        `UPDATE borrowings 
-         SET status = 'retourné', return_date = NOW() 
-         WHERE id = ?`,
-        [borrowingId]
-      );
-
-      // c. Valider la transaction
-      await db.commit();
-
-      res.status(200).json({ 
-        success: true,
-        message: 'Livre retourné avec succès' 
-      });
-
-    } catch (transactionError) {
-      await db.rollback();
-      throw transactionError;
-    }
-
-  } catch (error) {
-    console.error('Erreur retour:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Erreur lors du retour du livre',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 // Route pour obtenir les emprunts de l'utilisateur
 router.get('/my-borrowings', verifyToken, async (req, res) => {
   try {
@@ -1015,7 +961,6 @@ router.get('/my-borrowings', verifyToken, async (req, res) => {
   }
 });
 
-// Route pour annuler un emprunt par l'utilisateur
 // Route pour annuler un emprunt par l'utilisateur (suppression complète)
 router.post('/cancel-borrowing/:borrowingId', verifyToken, async (req, res) => {
   let connection;
@@ -1080,5 +1025,209 @@ router.post('/cancel-borrowing/:borrowingId', verifyToken, async (req, res) => {
     });
   } finally {
     if (connection) connection.release();
+  }
+});
+
+
+// Route pour obtenir les statistiques d'emprunt de l'utilisateur
+// Route pour obtenir les statistiques d'emprunt de l'utilisateur (version simplifiée)
+router.get('/stats', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userData.id;
+    
+    // Récupérer uniquement les statistiques d'emprunt
+    const [stats] = await db.query(`
+      SELECT
+        COUNT(*) AS totalBorrowed,
+        SUM(CASE WHEN status = 'emprunté' THEN 1 ELSE 0 END) AS currentBorrowed,
+        SUM(CASE WHEN status = 'retourné' THEN 1 ELSE 0 END) AS returnedBooks
+      FROM borrowings
+      WHERE user_id = ?
+    `, [userId]);
+    
+    res.status(200).json({
+      success: true,
+      totalBorrowed: stats[0].totalBorrowed || 0,
+      currentBorrowed: stats[0].currentBorrowed || 0,
+      returnedBooks: stats[0].returnedBooks || 0,
+      unreadNotifications: 0 // Valeur par défaut
+    });
+    
+  } catch (error) {
+    console.error('Erreur stats:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Erreur lors de la récupération des statistiques',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/notifications/unread-count', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userData.id;    
+    const [result] = await db.query(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = FALSE',
+      [userId]
+    );
+    
+    res.status(200).json({ 
+      success: true, 
+      count: result[0].count 
+    });
+  } catch (error) {
+    console.error('Erreur:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Récupérer les notifications d'un utilisateur
+router.get('/notifications', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userData.id;
+    
+    const [notifications] = await db.query(`
+      SELECT n.id, n.message, n.is_read, n.created_at, n.book_isbn, 
+             b.Title as book_title, b.Author as book_author
+      FROM notifications n
+      LEFT JOIN books b ON n.book_isbn = b.ISBN
+      WHERE n.user_id = ?
+      ORDER BY n.created_at DESC
+    `, [userId]);
+    
+    res.status(200).json({ success: true, notifications });
+  } catch (error) {
+    console.error('Erreur:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Marquer une notification comme lue
+router.put('/notifications/:id/read', verifyToken, async (req, res) => {
+  try {
+    const notificationId = req.params.id;
+    const userId = req.userData.id;    
+    const [result] = await db.query(
+      'UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?',
+      [notificationId, userId]
+    );
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: 'Notification non trouvée' });
+    }
+    
+    res.status(200).json({ success: true, message: 'Notification marquée comme lue' });
+  } catch (error) {
+    console.error('Erreur:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+// Marquer toutes les notifications comme lues
+router.put('/notifications/mark-all-read', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userData.id;    
+    const [result] = await db.query(
+      'UPDATE notifications SET is_read = TRUE WHERE user_id = ? AND is_read = FALSE',
+      [userId]
+    );
+    
+    res.status(200).json({ 
+      success: true, 
+      message: 'Toutes les notifications ont été marquées comme lues',
+      count: result.affectedRows
+    });
+  } catch (error) {
+    console.error('Erreur:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+// Compter les notifications non lues
+router.get('/notifications/unread-count', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userData.id;    
+    const [result] = await db.query(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0',
+      [userId]
+    );
+    
+    res.status(200).json({ 
+      success: true, 
+      count: result[0].count 
+    });
+  } catch (error) {
+    console.error('Erreur:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+// Remplacer les deux versions par cette seule implémentation
+router.get('/notifications/unread-count', verifyToken, async (req, res) => {
+  try {
+    const userId = req.userData.id;    
+    const [result] = await db.query(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0',
+      [userId]
+    );
+    
+    res.status(200).json({ 
+      success: true, 
+      count: result[0].count 
+    });
+  } catch (error) {
+    console.error('Erreur:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+
+
+// Dans votre fichier de routes d'authentification
+router.post('/auth/google', async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    // 1. Vérifiez le token Google avec la librairie Google Auth
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+    
+    const payload = ticket.getPayload();
+    
+    // 2. Cherchez ou créez l'utilisateur dans votre base de données
+    let user = await User.findOne({ where: { email: payload.email } });
+    
+    if (!user) {
+      // Création d'un nouvel utilisateur
+      user = await User.create({
+        email: payload.email,
+        nom: payload.family_name,
+        prenom: payload.given_name,
+        googleId: payload.sub,
+        role: 'utilisateur' // Par défaut
+      });
+    }
+    
+    // 3. Générez votre token JWT
+    const jwtToken = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+    
+    // 4. Renvoyez le token
+    res.json({ 
+      token: jwtToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        nom: user.nom,
+        prenom: user.prenom,
+        role: user.role
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erreur auth Google:', error);
+    res.status(401).json({ message: 'Authentification Google échouée' });
   }
 });
